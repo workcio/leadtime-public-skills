@@ -180,8 +180,9 @@ TMP_FILE="$(mktemp)"
 trap 'rm -f "$TMP_FILE"' EXIT
 
 METHOD_UPPER="$(printf '%s' "$METHOD" | tr '[:lower:]' '[:upper:]')"
+# Do not use curl -f: Public API returns JSON bodies for 4xx/5xx; -f would hide them.
 CURL_ARGS=(
-  -fsS
+  -sS
   -X "$METHOD_UPPER"
   -H "Authorization: Bearer $TOKEN"
   -H "Accept: application/json"
