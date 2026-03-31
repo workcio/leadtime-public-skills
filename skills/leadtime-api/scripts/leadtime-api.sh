@@ -8,9 +8,14 @@ usage() {
 Usage:
   leadtime-api.sh METHOD /path [options]
 
-Options:
+Authentication (first match wins):
+  --api-key KEY    Bearer token directly (no keyfile; use when user chose not to save)
   --keyfile PATH   Path to .leadtime-api-key.json (auto-detected if omitted)
-  --profile INDEX  Profile index in the keyfile (default: 0)
+  --profile INDEX  Profile index in the keyfile (default: 0; keyfile only)
+  (env) LEADTIME_API_KEY   Fallback token if no keyfile and no --api-key
+  (env) LEADTIME_API_BASE  Optional API base when using --api-key or LEADTIME_API_KEY
+
+Other options:
   -d JSON          Inline JSON request body
   -f FILE          Read JSON request body from file
   -q QUERY         Append query string
@@ -30,6 +35,7 @@ find_keyfile() {
   return 1
 }
 
+API_KEY_DIRECT=""
 KEYFILE=""
 PROFILE_INDEX=0
 QUERY=""
@@ -41,6 +47,10 @@ LT_EXTRA_HEADERS=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --api-key)
+      API_KEY_DIRECT="${2:-}"
+      shift 2
+      ;;
     --keyfile)
       KEYFILE="${2:-}"
       shift 2
@@ -96,23 +106,8 @@ if [[ -n "$BODY" && -n "$BODY_FILE" ]]; then
   exit 1
 fi
 
-# --- resolve keyfile ---
-if [[ -z "$KEYFILE" ]]; then
-  KEYFILE="$(find_keyfile)" || {
-    echo "No .leadtime-api-key.json found. Searched: ./ and ~/" >&2
-    echo "Set up a key first (see SKILL.md) or pass --keyfile PATH." >&2
-    exit 1
-  }
-fi
-
-if [[ ! -f "$KEYFILE" ]]; then
-  echo "Keyfile not found: $KEYFILE" >&2
-  exit 1
-fi
-
-# --- extract token and base from JSON keyfile ---
-read_profile() {
-  python3 - "$KEYFILE" "$PROFILE_INDEX" <<'PY'
+read_profile_from_keyfile() {
+  python3 - "$1" "$2" <<'PY'
 import json, sys
 keyfile = sys.argv[1]
 index = int(sys.argv[2])
@@ -135,10 +130,42 @@ print(f"{api_key}\n{api_base}")
 PY
 }
 
-PROFILE_DATA="$(read_profile)"
-TOKEN="$(echo "$PROFILE_DATA" | head -1)"
-BASE="$(echo "$PROFILE_DATA" | tail -1)"
-BASE="${BASE:-$DEFAULT_BASE}"
+# --- resolve token and base: --api-key > --keyfile > auto keyfile > LEADTIME_API_KEY ---
+TOKEN=""
+BASE=""
+
+if [[ -n "$API_KEY_DIRECT" ]]; then
+  TOKEN="$API_KEY_DIRECT"
+  BASE="${LEADTIME_API_BASE:-$DEFAULT_BASE}"
+elif [[ -n "$KEYFILE" ]]; then
+  if [[ ! -f "$KEYFILE" ]]; then
+    echo "Keyfile not found: $KEYFILE" >&2
+    exit 1
+  fi
+  PROFILE_DATA="$(read_profile_from_keyfile "$KEYFILE" "$PROFILE_INDEX")"
+  TOKEN="$(echo "$PROFILE_DATA" | head -1)"
+  BASE="$(echo "$PROFILE_DATA" | tail -1)"
+  BASE="${BASE:-$DEFAULT_BASE}"
+else
+  if AUTO_KEYFILE="$(find_keyfile)"; then
+    PROFILE_DATA="$(read_profile_from_keyfile "$AUTO_KEYFILE" "$PROFILE_INDEX")"
+    TOKEN="$(echo "$PROFILE_DATA" | head -1)"
+    BASE="$(echo "$PROFILE_DATA" | tail -1)"
+    BASE="${BASE:-$DEFAULT_BASE}"
+  elif [[ -n "${LEADTIME_API_KEY:-}" ]]; then
+    TOKEN="${LEADTIME_API_KEY}"
+    BASE="${LEADTIME_API_BASE:-$DEFAULT_BASE}"
+  else
+    echo "No API key: pass --api-key, set LEADTIME_API_KEY, or create .leadtime-api-key.json (./ or ~/)." >&2
+    echo "See SKILL.md." >&2
+    exit 1
+  fi
+fi
+
+if [[ -z "$TOKEN" ]]; then
+  echo "Resolved empty API token." >&2
+  exit 1
+fi
 
 # --- build URL ---
 URL="${BASE%/}/${PATH_PART#/}"

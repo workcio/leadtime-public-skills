@@ -10,10 +10,16 @@ Public, shareable agent skills for [Leadtime](https://leadtime.app) — usable w
 
 ## Installation
 
-Install any skill with:
+Install a specific skill:
 
 ```bash
-npx skills install workcio/leadtime-public-skills/skills/<skill-name>
+npx skills add workcio/leadtime-public-skills --skill leadtime-api
+```
+
+List skills in this repo:
+
+```bash
+npx skills add workcio/leadtime-public-skills --list
 ```
 
 Or clone the repo and copy/symlink the skill folder into your agent's skills directory.

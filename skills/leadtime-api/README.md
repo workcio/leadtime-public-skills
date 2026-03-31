@@ -5,7 +5,13 @@ An agent skill for interacting with the [Leadtime](https://leadtime.app) Public 
 ## Installation
 
 ```bash
-npx skills install workcio/leadtime-public-skills/skills/leadtime-api
+npx skills add workcio/leadtime-public-skills --skill leadtime-api
+```
+
+Optional: install to specific agents (e.g. Claude Code):
+
+```bash
+npx skills add workcio/leadtime-public-skills --skill leadtime-api -a claude-code
 ```
 
 Or clone manually:
@@ -17,7 +23,7 @@ git clone https://github.com/workcio/leadtime-public-skills.git
 
 ## What it does
 
-- **API key management** — stores credentials in `.leadtime-api-key.json` with support for multiple workspaces
+- **API key management** — keyfile (`.leadtime-api-key.json`), or `--api-key` / `LEADTIME_API_KEY` when you do not want to save credentials
 - **OpenAPI spec caching** — fetches the live spec from `leadtime.app` and caches it per session in `/tmp`
 - **Endpoint discovery** — search and inspect any endpoint via the `openapi-helper.py` script
 - **Authenticated requests** — `leadtime-api.sh` wrapper handles auth, JSON formatting, and profile selection
@@ -89,9 +95,17 @@ The agent searches for this file in:
 
 Generic API wrapper with auth, profile selection, and JSON pretty-printing.
 
+**Authentication order:** `--api-key` → explicit `--keyfile` → auto-detected `.leadtime-api-key.json` → `LEADTIME_API_KEY` env var.
+
 ```bash
-# Get a task
+# Get a task (uses keyfile in ./ or ~/, or LEADTIME_API_KEY)
 bash scripts/leadtime-api.sh GET /tasks/947
+
+# Pass token without a keyfile (session-only / no-save flow)
+bash scripts/leadtime-api.sh --api-key "$LEADTIME_API_KEY" GET /tasks/947
+
+# Or set env for one command
+LEADTIME_API_KEY=lt_... bash scripts/leadtime-api.sh GET /workspace/details
 
 # Search tasks
 bash scripts/leadtime-api.sh GET /tasks/grid -q "page=1&pageSize=10"
@@ -99,7 +113,7 @@ bash scripts/leadtime-api.sh GET /tasks/grid -q "page=1&pageSize=10"
 # Update a task
 bash scripts/leadtime-api.sh PATCH /tasks/947 -d '{"title":"Updated title"}'
 
-# Use a specific profile
+# Use a specific profile (keyfile only)
 bash scripts/leadtime-api.sh GET /workspace/details --profile 1
 ```
 
@@ -120,7 +134,8 @@ python3 scripts/openapi-helper.py schema CreateTaskDto
 
 ## Security
 
-- API keys are stored locally in `.leadtime-api-key.json` with `chmod 600`
+- If you save credentials, use `.leadtime-api-key.json` with `chmod 600`
+- Prefer `--api-key` or `LEADTIME_API_KEY` for a session when you do not want a keyfile on disk
 - Keys are never logged, printed back to the user, or committed to repositories
 - Add `.leadtime-api-key.json` to your `.gitignore`
 

@@ -86,6 +86,14 @@ Ask the user whether to save the key for future sessions:
 > 2. This project directory (./.leadtime-api-key.json) — project-scoped
 > 3. Don't save — I'll ask again next session
 
+**If the user chooses "don't save":** keep the key only in memory for this session. For every `leadtime-api.sh` call, pass the token explicitly:
+
+```bash
+bash "$SKILL_DIR/scripts/leadtime-api.sh" --api-key "$API_KEY" GET /tasks/947
+```
+
+Do **not** echo the key into shell history in a way that persists; prefer the agent holding the value and passing it to the script. Alternatively, set `LEADTIME_API_KEY` for the current shell session only (not exported to disk).
+
 If the user agrees, write/merge the profile into the chosen `.leadtime-api-key.json`:
 
 ```bash
@@ -172,6 +180,12 @@ EOF
 bash "$SKILL_DIR/scripts/leadtime-api.sh" POST /tasks/943/comments -f /tmp/payload.json
 ```
 
+If there is no keyfile (user chose not to save), pass the key:
+
+```bash
+bash "$SKILL_DIR/scripts/leadtime-api.sh" --api-key "$API_KEY" POST /tasks/943/comments -f /tmp/payload.json
+```
+
 ### 5. VERIFY — re-fetch after mutations
 
 After any create/update/delete, re-fetch the entity to confirm the change took effect.
@@ -193,9 +207,14 @@ After any create/update/delete, re-fetch the entity to confirm the change took e
 ```bash
 bash "$SKILL_DIR/scripts/leadtime-api.sh" METHOD /path [options]
 
-Options:
+Authentication (first match wins):
+  --api-key KEY    Bearer token directly (no keyfile; use when user chose not to save)
   --keyfile PATH   Path to .leadtime-api-key.json (auto-detected if omitted)
-  --profile INDEX  Profile index in the keyfile (default: 0)
+  --profile INDEX  Profile index in the keyfile (default: 0; keyfile only)
+  (env) LEADTIME_API_KEY   Fallback if no keyfile and no --api-key
+  (env) LEADTIME_API_BASE  Optional API base when using --api-key or LEADTIME_API_KEY
+
+Other options:
   -d JSON          Inline JSON request body
   -f FILE          Read JSON request body from file
   -q QUERY         Append query string
@@ -211,6 +230,8 @@ bash "$SKILL_DIR/scripts/leadtime-api.sh" GET /tasks/947
 bash "$SKILL_DIR/scripts/leadtime-api.sh" GET /tasks/grid -q "page=1&pageSize=10"
 bash "$SKILL_DIR/scripts/leadtime-api.sh" PATCH /tasks/947 -d '{"title":"Updated"}'
 bash "$SKILL_DIR/scripts/leadtime-api.sh" GET /tasks/947 --profile 1
+bash "$SKILL_DIR/scripts/leadtime-api.sh" --api-key "$API_KEY" GET /tasks/947
+LEADTIME_API_KEY=lt_... bash "$SKILL_DIR/scripts/leadtime-api.sh" GET /workspace/details
 ```
 
 ### `openapi-helper.py` — query cached OpenAPI spec
