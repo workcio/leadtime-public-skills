@@ -26,12 +26,10 @@ EOF
 }
 
 find_keyfile() {
-  for candidate in "./.leadtime-api-key.json" "$HOME/.leadtime-api-key.json"; do
-    if [[ -f "$candidate" ]]; then
-      echo "$candidate"
-      return
-    fi
-  done
+  if [[ -f "./.leadtime-api-key.json" ]]; then
+    echo "./.leadtime-api-key.json"
+    return 0
+  fi
   return 1
 }
 

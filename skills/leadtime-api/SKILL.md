@@ -1,9 +1,12 @@
 ---
 name: leadtime-api
-description: Works with live Leadtime data through the production Public API on leadtime.app. Use when the user asks to check, create, update, or inspect tasks, projects, organizations, workspace data, or other Leadtime entities. Handles API key storage, OpenAPI spec caching, and multi-workspace profiles. Triggers on "check task", "list projects", "create via Leadtime API", "update task in Leadtime", "query Leadtime", or any request involving Leadtime production data.
+description: Works with live Leadtime data through the production Public API on leadtime.app. Use when the user asks to check, create, update, or inspect tasks, projects, organizations, workspace data, or other Leadtime entities. Also use it to answer product questions about how Leadtime features work by querying the built-in help center before or alongside data/API calls. Handles API key storage, OpenAPI spec caching, and multi-workspace profiles. Triggers on "check task", "list projects", "create via Leadtime API", "update task in Leadtime", "query Leadtime", "how does Leadtime feature X work", or any request involving Leadtime production data.
 ---
 
 # Leadtime Public API
+
+**IMPORTANT: Verbosity Rule**
+Do not narrate internal steps to the user (e.g., "Let me download the OpenAPI spec", "Let me search for the endpoint", "Let me check for API keys"). Perform these steps silently and only communicate the final result or ask for required input (like the API key).
 
 Interact with the Leadtime production API at `https://leadtime.app/api/public`.
 
@@ -20,35 +23,40 @@ Helper scripts are in `$SKILL_DIR/scripts/`.
 
 ## Setup — API key
 
-### 1. Check for existing credentials
+### 1. Check for credentials
 
-Before prompting the user, search for `.leadtime-api-key.json` in this order:
-
-1. Current working directory (`./.leadtime-api-key.json`)
-2. Home directory (`~/.leadtime-api-key.json`)
+Before prompting the user, silently check if `.leadtime-api-key.json` exists in the current working directory.
 
 ```bash
-for candidate in "./.leadtime-api-key.json" "$HOME/.leadtime-api-key.json"; do
-  if [[ -f "$candidate" ]]; then
-    KEYFILE="$candidate"
-    break
-  fi
-done
+KEYFILE="./.leadtime-api-key.json"
+if [[ -f "$KEYFILE" ]]; then
+  # Use this keyfile
+fi
 ```
 
-If found, load and present available profiles to the user (company name + username). Let the user pick or default to the first profile.
+If found, use it. You do not need to ask the user.
 
-### 2. Ask for an API key (if none found)
+### 2. Ask for key (if none found)
 
-Prompt the user:
+If the file doesn't exist, prompt the user:
 
 > I need a Leadtime API key to access your workspace.
 > Create a Personal Access Token at: https://leadtime.app/leadtime/profile/api-tokens
 > Then paste the key here.
 
-### 3. Validate and enrich the key
+### 3. Execute the user's request immediately
 
-After receiving the key, call the API to fetch account and workspace info:
+Once you receive the key, **do what the user originally asked for immediately** using the key in memory (e.g., pass it via `--api-key "$API_KEY"`). Do not ask to save the key yet.
+
+### 4. Ask to save the key (after completing the task)
+
+Only *after* you have successfully completed the user's original request and provided the answer, ask if they want to save the key for future use:
+
+> Would you like me to save this API key in the current folder (`./.leadtime-api-key.json`) for future sessions?
+
+### 5. Validate and save (if user says yes)
+
+If the user agrees to save the key, fetch the account and workspace info to build the profile:
 
 ```bash
 # Fetch account info
@@ -62,42 +70,28 @@ curl -fsS -H "Authorization: Bearer $API_KEY" \
   https://leadtime.app/api/public/workspace/details
 ```
 
-Build a profile entry from the response:
+Build the profile entry and write it to `./.leadtime-api-key.json`:
 
 ```json
 {
-  "apiKey": "lt_...",
-  "apiBase": "https://leadtime.app/api/public",
-  "companyName": "Acme GmbH",
-  "username": "Jane Doe",
-  "email": "jane@acme.com",
-  "workspaceId": "uuid",
-  "domain": "acme",
-  "addedAt": "2026-04-01T12:00:00Z"
+  "version": 1,
+  "profiles": [
+    {
+      "apiKey": "lt_...",
+      "apiBase": "https://leadtime.app/api/public",
+      "companyName": "Acme GmbH",
+      "username": "Jane Doe",
+      "email": "jane@acme.com",
+      "workspaceId": "uuid",
+      "domain": "acme",
+      "addedAt": "2026-04-01T12:00:00Z"
+    }
+  ]
 }
 ```
 
-### 4. Ask about persistent storage
-
-Ask the user whether to save the key for future sessions:
-
-> Should I save this API key for future use? I can store it in:
-> 1. Your home directory (~/.leadtime-api-key.json) — available everywhere
-> 2. This project directory (./.leadtime-api-key.json) — project-scoped
-> 3. Don't save — I'll ask again next session
-
-**If the user chooses "don't save":** keep the key only in memory for this session. For every `leadtime-api.sh` call, pass the token explicitly:
-
 ```bash
-bash "$SKILL_DIR/scripts/leadtime-api.sh" --api-key "$API_KEY" GET /tasks/947
-```
-
-Do **not** echo the key into shell history in a way that persists; prefer the agent holding the value and passing it to the script. Alternatively, set `LEADTIME_API_KEY` for the current shell session only (not exported to disk).
-
-If the user agrees, write/merge the profile into the chosen `.leadtime-api-key.json`:
-
-```bash
-chmod 600 "$KEYFILE"
+chmod 600 ./.leadtime-api-key.json
 ```
 
 ### Key file format (`.leadtime-api-key.json`)
@@ -249,7 +243,24 @@ python3 "$SKILL_DIR/scripts/openapi-helper.py" schema <SchemaName>
 
 ## Help center lookup
 
-The API exposes Leadtime's help center. Use proactively when you need to understand a Leadtime feature:
+The API exposes Leadtime's help center through two endpoints:
+
+- `GET /help-center/search?searchTerm=...`
+- `GET /help-center/article?articleId=...&helpcenterCollectionId=...&language=en|de`
+
+Use these proactively in two situations:
+
+1. **Answering user questions about Leadtime features** when the user asks what something is, how it works, what it is for, or how to use it.
+2. **Teaching yourself the domain before calling other endpoints** when you need product context first. If a user asks about an unfamiliar Leadtime domain (for example Objects, project planning, task types, document templates, or workflows), search the help center first so you understand the business meaning before exploring or mutating API data.
+
+Recommended workflow:
+
+1. Search the help center for the feature/domain name.
+2. Read the most relevant article(s).
+3. Summarize the product meaning in plain language.
+4. Only then discover and call data endpoints if the user also needs live workspace data or mutations.
+
+This avoids guessing what a Leadtime concept means based only on endpoint names or database fields.
 
 ```bash
 # Search articles
@@ -258,6 +269,12 @@ bash "$SKILL_DIR/scripts/leadtime-api.sh" GET "/help-center/search?searchTerm=ta
 # Fetch full article
 bash "$SKILL_DIR/scripts/leadtime-api.sh" GET "/help-center/article?articleId=ID&helpcenterCollectionId=CID&language=en" --raw
 ```
+
+Example uses:
+
+- User asks: "What are Objects in Leadtime?" -> search help center first, then answer from docs.
+- User asks: "List our objects and explain what objects are used for." -> search help center first for product context, then call `/objects` or related endpoints for live data.
+- You need to understand a Leadtime area before working with it -> read help-center docs first, then inspect OpenAPI operations for exact endpoints and schemas.
 
 ## Embedded images
 
@@ -269,17 +286,3 @@ Task descriptions and comments may contain HTML with embedded files:
 
 To inspect: parse `fileId` from HTML, then fetch `https://leadtime.app/api/files/public/{fileId}`.
 
-## Pass/fail reporting
-
-When exercising multiple endpoints, end with a summary:
-
-```
-## Results
-
-| # | Endpoint | Method | Status | Notes |
-|---|----------|--------|--------|-------|
-| 1 | /tasks/947 | GET | PASS | Returned task data |
-| 2 | /tasks/947 | PATCH | PASS | Title updated |
-
-**Overall: PASS** (2/2)
-```
